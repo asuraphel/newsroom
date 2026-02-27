@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Model Comparison Dashboard</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chart.js DataLabels Plugin -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+    
+    <style>
+        body { font-family: 'Inter', system-ui, sans-serif; background-color: #fafafa; }
+        .chart-container { position: relative; height: 320px; width: 100%; display: flex; justify-content: center; align-items: center; }
+        .card-title { text-align: center; font-weight: 700; font-size: 1.1rem; color: #111827; margin-bottom: 1rem; }
+        
+        /* Table Styling */
+        .scorecard th { background-color: #1f2937; color: white; padding: 10px; font-size: 0.85rem; font-weight: 600; text-align: center; border: 1px solid #374151; }
+        .scorecard td { padding: 10px; text-align: center; font-size: 0.9rem; border: 1px solid #e5e7eb; color: #1f2937; }
+        .scorecard tr:nth-child(even) { background-color: #f9fafb; }
+    </style>
+</head>
+<body class="p-6">
+
+    <div class="max-w-[1600px] mx-auto space-y-8">
+        
+        <!-- Header & Controls -->
+        <header class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+                <h1 class="text-3xl font-bold text-slate-900 tracking-tight">Model Evaluation Dashboard</h1>
+                <p class="text-slate-500 mt-1">Interactive comparison of LLM performance metrics.</p>
+            </div>
+            
+            <!-- Model Selectors -->
+            <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                <span class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 block">Toggle Models</span>
+                <div id="model-selectors" class="flex flex-wrap gap-3">
+                    <span class="text-sm text-slate-400 italic" id="loading-text">Loading data from eval_results_full.json...</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Error Warning -->
+        <div id="error-message" class="hidden bg-rose-50 border-l-4 border-rose-500 text-rose-700 p-4 rounded shadow-sm">
+            <p class="font-bold">Error loading data</p>
+            <p class="text-sm mt-1">Make sure <code>eval_results_full.json</code> is in the same directory and you are running a local web server.</p>
+        </div>
+
+        <!-- 3-Column Grid for Charts -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            
+            <!-- 1. Quality Metrics Radar -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <h2 class="card-title">Quality Metrics Radar</h2>
+                <div class="chart-container"><canvas id="radarChart"></canvas></div>
+            </div>
+
+            <!-- 2. Hallucination vs Faithfulness -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <h2 class="card-title">Hallucination vs Faithfulness</h2>
+                <div class="chart-container"><canvas id="hallucinationChart"></canvas></div>
+            </div>
+
+            <!-- 3. Cost vs Quality (Bubble) -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <h2 class="card-title">Cost vs Quality (Size = Token Count)</h2>
+                <div class="chart-container"><canvas id="costQualityBubble"></canvas></div>
+            </div>
+
+            <!-- 4. Latency Comparison -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <h2 class="card-title">Latency Comparison</h2>
+                <div class="chart-container"><canvas id="latencyChart"></canvas></div>
+            </div>
+
+            <!-- 5. Performance by Complexity -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <h2 class="card-title">Performance by Complexity</h2>
+                <div class="chart-container"><canvas id="complexityChart"></canvas></div>
+            </div>
+
+            <!-- 6. Context Scaling -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <h2 class="card-title">Context Scaling Performance</h2>
+                <div class="chart-container"><canvas id="contextChart"></canvas></div>
+            </div>
+
+            <!-- 7. Tool Usage -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <h2 class="card-title">Tool Usage Accuracy</h2>
+                <div class="chart-container"><canvas id="toolChart"></canvas></div>
+            </div>
+
+            <!-- 8. Performance by Test Group -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <h2 class="card-title">Performance by Test Group</h2>
+                <div class="chart-container"><canvas id="groupChart"></canvas></div>
+            </div>
+
+            <!-- 9. Cost Distribution -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col">
+                <h2 class="card-title">Total Cost Distribution</h2>
+                <div class="chart-container"><canvas id="costPie"></canvas></div>
+            </div>
+
+            <!-- 10. Quality vs Speed -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <h2 class="card-title">Quality vs Speed Trade-off</h2>
+                <div class="chart-container"><canvas id="speedQualityScatter"></canvas></div>
+            </div>
+
+            <!-- 11. Token Cost Efficiency -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <h2 class="card-title">Token Cost Efficiency</h2>
+                <div class="chart-container"><canvas id="efficiencyChart"></canvas></div>
+            </div>
+
+            <!-- 12. Scorecard Table -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-center">
+                <h2 class="card-title">Performance Scorecard</h2>
+                <div class="w-full overflow-x-auto">
+                    <table class="scorecard w-full border-collapse" id="scorecard-table">
+                        <thead>
+                            <tr>
+                                <th>Model</th>
+                                <th>Quality</th>
+                                <th>Tool Acc.</th>
+                                <th>Halluc.</th>
+                                <th>Latency</th>
+                                <th>Cost/Test</th>
+                                <th>Tests</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scorecard-body">
+                            <!-- Injected by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // Register the DataLabels plugin
+        Chart.register(ChartDataLabels);
+
+        // Global State
+        let rawData = {};
+        let allModelKeys = [];
+        let selectedModels = new Set();
+        let chartInstances = {};
+
+        // Color palette matching the image aesthetic (Salmon, Mint, Purple, Blue, Amber)
+        const palette = [
+            { bg: 'rgba(255, 107, 107, 0.6)', border: '#ff6b6b', solid: '#ff6b6b' }, // Salmon
+            { bg: 'rgba(78, 205, 196, 0.6)', border: '#4ecdc4', solid: '#4ecdc4' }, // Mint
+            { bg: 'rgba(160, 108, 213, 0.6)', border: '#a06cd5', solid: '#a06cd5' }, // Purple
+            { bg: 'rgba(59, 130, 246, 0.6)', border: '#3b82f6', solid: '#3b82f6' }, // Blue
+            { bg: 'rgba(245, 158, 11, 0.6)', border: '#f59e0b', solid: '#f59e0b' }  // Amber
+        ];
+
+        // Fetch Data
+        fetch('/eval_results_full.json')
+            .then(res => {
+                if (!res.ok) throw new Error("Network response was not ok");
+                return res.json();
+            })
+            .then(data => {
+                rawData = data;
+                allModelKeys = Object.keys(data);
+                allModelKeys.forEach(k => selectedModels.add(k)); // Select all by default
+                initModelSelectors();
+                updateDashboard();
+            })
+            .catch(error => {
+                console.error("Failed to load JSON:", error);
+                document.getElementById('error-message').classList.remove('hidden');
+                document.getElementById('loading-text').innerText = "Failed to load.";
+            });
+
+        function initModelSelectors() {
+            const container = document.getElementById('model-selectors');
+            container.innerHTML = '';
+
+            allModelKeys.forEach((key, index) => {
+                const model = rawData[key];
+                const color = palette[index % palette.length].solid;
+                
+                const label = document.createElement('label');
+                label.className = "inline-flex items-center cursor-pointer bg-white border border-slate-200 px-3 py-1.5 rounded shadow-sm hover:bg-slate-50 transition-colors";
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = "checkbox";
+                checkbox.className = "form-checkbox h-4 w-4 rounded cursor-pointer";
+                checkbox.checked = true;
+                checkbox.onchange = (e) => {
+                    e.target.checked ? selectedModels.add(key) : selectedModels.delete(key);
+                    updateDashboard();
+                };
+
+                const spanColor = document.createElement('span');
+                spanColor.className = "w-3 h-3 rounded-full ml-2 mr-2 inline-block";
+                spanColor.style.backgroundColor = color;
+
+                const spanText = document.createElement('span');
+                spanText.className = "text-sm font-semibold text-slate-700";
+                spanText.innerText = model.label || key;
+
+                label.appendChild(checkbox);
+                label.appendChild(spanColor);
+                label.appendChild(spanText);
+                container.appendChild(label);
+            });
+        }
+
+        function getActiveModels() {
+            return allModelKeys
+                .filter(k => selectedModels.has(k))
+                .map((k, i) => ({ key: k, color: palette[i % palette.length], data: rawData[k] }));
+        }
+
+        function destroyChart(id) {
+            if (chartInstances[id]) { chartInstances[id].destroy(); }
+        }
+
+        function updateDashboard() {
+            const active = getActiveModels();
+            
+            // Default global chart settings
+            Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
+            Chart.defaults.color = '#6b7280';
+            Chart.defaults.plugins.datalabels.display = false; // Off by default
+
+            if (active.length === 0) {
+                Object.keys(chartInstances).forEach(destroyChart);
+                document.getElementById('scorecard-body').innerHTML = '<tr><td colspan="7">No models selected</td></tr>';
+                return;
+            }
+
+            renderRadar(active);
+            renderHallucination(active);
+            renderCostQualityBubble(active);
+            renderLatency(active);
+            renderComplexity(active);
+            renderContextScaling(active);
+            renderToolUsage(active);
+            renderTestGroup(active);
+            renderCostPie(active);
+            renderSpeedQualityScatter(active);
+            renderEfficiency(active);
+            renderScorecard(active);
+        }
+
+        // 1. Quality Metrics Radar
+        function renderRadar(models) {
+            destroyChart('radarChart');
+            const metrics = ['Relevancy', 'Faithfulness', 'Overall', 'Tone', 'Completeness', 'Safety'];
+            const keys = ['avg_relevancy', 'avg_faithfulness', 'avg_overall', 'avg_tone', 'avg_completeness', 'avg_safety'];
+            
+            chartInstances['radarChart'] = new Chart(document.getElementById('radarChart'), {
+                type: 'radar',
+                data: {
+                    labels: metrics,
+                    datasets: models.map(m => ({
+                        label: m.data.label,
+                        data: keys.map(k => m.data[k]),
+                        backgroundColor: m.color.bg.replace('0.6', '0.2'),
+                        borderColor: m.color.solid,
+                        pointBackgroundColor: m.color.solid,
+                        borderWidth: 2
+                    }))
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: { r: { min: 0, max: 1, ticks: { stepSize: 0.2 } } },
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12 } } }
+                }
+            });
+        }
+
+        // 2. Hallucination vs Faithfulness (Grouped Bar by Model)
+        function renderHallucination(models) {
+            destroyChart('hallucinationChart');
+            chartInstances['hallucinationChart'] = new Chart(document.getElementById('hallucinationChart'), {
+                type: 'bar',
+                data: {
+                    labels: models.map(m => m.data.label),
+                    datasets: [
+                        { label: 'Hallucination Rate', data: models.map(m => m.data.hallucination_rate), backgroundColor: '#ff6b6b' },
+                        { label: 'Faithfulness Rate', data: models.map(m => m.data.faithfulness_rate), backgroundColor: '#4ecdc4' }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: { y: { min: 0, max: 1 } },
+                    plugins: { 
+                        legend: { position: 'top' },
+                        datalabels: { display: true, align: 'end', anchor: 'end', formatter: v => v.toFixed(2), font: {size: 10} }
+                    }
+                }
+            });
+        }
+
+        // 3. Cost vs Quality (Bubble)
+        function renderCostQualityBubble(models) {
+            destroyChart('costQualityBubble');
+            chartInstances['costQualityBubble'] = new Chart(document.getElementById('costQualityBubble'), {
+                type: 'bubble',
+                data: {
+                    datasets: models.map(m => ({
+                        label: m.data.label,
+                        backgroundColor: m.color.bg,
+                        borderColor: m.color.solid,
+                        borderWidth: 2,
+                        data: [{
+                            x: m.data.avg_cost_per_test * 100, // in cents
+                            y: m.data.avg_overall,
+                            r: Math.max(5, Math.sqrt(m.data.total_tokens) / 10) // Scale token count to radius
+                        }]
+                    }))
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: {
+                        x: { title: { display: true, text: 'Cost per Test (cents)' } },
+                        y: { title: { display: true, text: 'Overall Quality Score' }, min: 0 }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        datalabels: { display: true, formatter: (v, ctx) => ctx.dataset.label, anchor: 'end', align: 'end' }
+                    }
+                }
+            });
+        }
+
+        // 4. Latency Comparison
+        function renderLatency(models) {
+            destroyChart('latencyChart');
+            chartInstances['latencyChart'] = new Chart(document.getElementById('latencyChart'), {
+                type: 'bar',
+                data: {
+                    labels: models.map(m => m.data.label),
+                    datasets: [
+                        { label: 'Avg Latency', data: models.map(m => m.data.avg_latency), backgroundColor: '#4facfe' },
+                        { label: 'P95 Latency', data: models.map(m => m.data.p95_latency || m.data.avg_latency * 1.5), backgroundColor: '#a06cd5' } // Fallback if p95 missing
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: { y: { title: { display: true, text: 'Latency (seconds)' } } }
+                }
+            });
+        }
+
+        // 5. Performance by Complexity
+        function renderComplexity(models) {
+            destroyChart('complexityChart');
+            const levels = ['low', 'medium', 'high'];
+            chartInstances['complexityChart'] = new Chart(document.getElementById('complexityChart'), {
+                type: 'bar',
+                data: {
+                    labels: ['Low', 'Medium', 'High'],
+                    datasets: models.map(m => ({
+                        label: m.data.label,
+                        data: levels.map(l => m.data.by_complexity[l]?.avg_overall || 0),
+                        backgroundColor: m.color.solid
+                    }))
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: { y: { min: 0, max: 1, title: { display: true, text: 'Overall Score' } } }
+                }
+            });
+        }
+
+        // 6. Context Scaling Performance
+        function renderContextScaling(models) {
+            destroyChart('contextChart');
+            // Find all unique context keys across active models (e.g., '1k', '4k')
+            let ctxSet = new Set();
+            models.forEach(m => {
+                if(m.data.ctx_ladder_analysis) {
+                    Object.keys(m.data.ctx_ladder_analysis).forEach(k => ctxSet.add(k));
+                }
+            });
+            // Sort keys numerically if possible (e.g., 1k, 4k, 8k)
+            const ctxKeys = Array.from(ctxSet).sort((a, b) => parseInt(a) - parseInt(b));
+
+            chartInstances['contextChart'] = new Chart(document.getElementById('contextChart'), {
+                type: 'line',
+                data: {
+                    labels: ctxKeys.map(k => k.toUpperCase()),
+                    datasets: models.map(m => ({
+                        label: m.data.label,
+                        data: ctxKeys.map(k => m.data.ctx_ladder_analysis?.[k]?.avg_overall || null),
+                        borderColor: m.color.solid,
+                        backgroundColor: m.color.solid,
+                        tension: 0.1,
+                        pointRadius: 6,
+                        spanGaps: true
+                    }))
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: { 
+                        y: { min: 0, max: 1, title: { display: true, text: 'Overall Score' } },
+                        x: { title: { display: true, text: 'Context Length' } }
+                    }
+                }
+            });
+        }
+
+        // 7. Tool Usage
+        function renderToolUsage(models) {
+            destroyChart('toolChart');
+            chartInstances['toolChart'] = new Chart(document.getElementById('toolChart'), {
+                type: 'bar',
+                data: {
+                    labels: models.map(m => m.data.label),
+                    datasets: [{
+                        label: 'Tool Correctness',
+                        data: models.map(m => m.data.avg_tool_correctness),
+                        backgroundColor: models.map(m => m.color.solid)
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: { y: { min: 0, max: 1, title: { display: true, text: 'Score' } } },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+
+        // 8. Performance by Test Group
+        function renderTestGroup(models) {
+            destroyChart('groupChart');
+            const groups = ['standard', 'guardrail', 'context_ladder'];
+            chartInstances['groupChart'] = new Chart(document.getElementById('groupChart'), {
+                type: 'bar',
+                data: {
+                    labels: ['Standard', 'Guardrail', 'Context Ladder'],
+                    datasets: models.map(m => ({
+                        label: m.data.label,
+                        data: groups.map(g => m.data.by_group[g]?.avg_overall || 0),
+                        backgroundColor: m.color.solid
+                    }))
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: { y: { min: 0, max: 1, title: { display: true, text: 'Overall Score' } } }
+                }
+            });
+        }
+
+        // 9. Cost Distribution (Pie)
+        function renderCostPie(models) {
+            destroyChart('costPie');
+            chartInstances['costPie'] = new Chart(document.getElementById('costPie'), {
+                type: 'pie',
+                data: {
+                    labels: models.map(m => m.data.label),
+                    datasets: [{
+                        data: models.map(m => m.data.total_cost_usd),
+                        backgroundColor: models.map(m => m.color.solid)
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'right' },
+                        datalabels: { 
+                            display: true, 
+                            color: '#fff', 
+                            font: {weight: 'bold'},
+                            formatter: v => '$' + v.toFixed(4)
+                        }
+                    }
+                }
+            });
+        }
+
+        // 10. Quality vs Speed (Scatter)
+        function renderSpeedQualityScatter(models) {
+            destroyChart('speedQualityScatter');
+            chartInstances['speedQualityScatter'] = new Chart(document.getElementById('speedQualityScatter'), {
+                type: 'scatter',
+                data: {
+                    datasets: models.map(m => ({
+                        label: m.data.label,
+                        backgroundColor: m.color.bg,
+                        borderColor: m.color.solid,
+                        pointRadius: 10,
+                        borderWidth: 2,
+                        data: [{ x: m.data.avg_latency, y: m.data.avg_overall }]
+                    }))
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: {
+                        x: { title: { display: true, text: 'Average Latency (seconds)' }, min: 0 },
+                        y: { title: { display: true, text: 'Overall Quality Score' }, min: 0, max: 1 }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        datalabels: { display: true, formatter: (v, ctx) => ctx.dataset.label, anchor: 'end', align: 'end', font: {weight: 'bold'} }
+                    }
+                }
+            });
+        }
+
+        // 11. Token Cost Efficiency
+        function renderEfficiency(models) {
+            destroyChart('efficiencyChart');
+            chartInstances['efficiencyChart'] = new Chart(document.getElementById('efficiencyChart'), {
+                type: 'bar',
+                data: {
+                    labels: models.map(m => m.data.label),
+                    datasets: [{
+                        label: 'Cost per 1K Tokens',
+                        data: models.map(m => {
+                            const per1k = m.data.total_cost_usd / (m.data.total_tokens / 1000);
+                            return per1k;
+                        }),
+                        backgroundColor: models.map(m => m.color.solid)
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: { y: { title: { display: true, text: 'Cost ($)' } } },
+                    plugins: {
+                        legend: { display: false },
+                        datalabels: { display: true, align: 'end', anchor: 'end', formatter: v => '$' + v.toFixed(5) }
+                    }
+                }
+            });
+        }
+
+        // 12. Scorecard Table
+        function renderScorecard(models) {
+            const body = document.getElementById('scorecard-body');
+            body.innerHTML = '';
+            models.forEach(m => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td style="background-color: ${m.color.bg}; font-weight: 600;">${m.data.label}</td>
+                    <td>${m.data.avg_overall.toFixed(3)}</td>
+                    <td>${m.data.avg_tool_correctness.toFixed(3)}</td>
+                    <td>${m.data.hallucination_rate.toFixed(3)}</td>
+                    <td>${m.data.avg_latency.toFixed(2)}s</td>
+                    <td>$${m.data.avg_cost_per_test.toFixed(5)}</td>
+                    <td>${m.data.total_records}</td>
+                `;
+                body.appendChild(tr);
+            });
+        }
+
+    </script>
+</body>
+</html>
