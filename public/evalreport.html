@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LLM Eval Dashboard</title>
+<!-- <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet"> -->
+<style>
+:root {
+  --bg:#07080c;--bg2:#0d0f16;--surface:#111420;--surface2:#171b2a;
+  --border:#1f2436;--border2:#2a3050;--text:#dde1f0;--muted:#5a6080;--muted2:#3a4060;
+  --mono:'JetBrains Mono',monospace;--display:'Syne',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:var(--display);font-size:14px;line-height:1.6;min-height:100vh;}
+
+/* LOADING */
+#loading{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:24px;}
+.loader-ring{width:48px;height:48px;border:2px solid var(--border2);border-top-color:#6366f1;border-radius:50%;animation:spin .8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loader-text{font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;}
+
+/* HEADER */
+.header{padding:48px 52px 36px;border-bottom:1px solid var(--border);position:relative;overflow:hidden;}
+.header-bg{position:absolute;inset:0;background:radial-gradient(ellipse 60% 80% at 90% -20%,rgba(99,102,241,.08) 0%,transparent 60%),radial-gradient(ellipse 40% 60% at 10% 110%,rgba(34,197,94,.05) 0%,transparent 60%);pointer-events:none;}
+.header-eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:4px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;}
+.header h1{font-size:32px;font-weight:800;letter-spacing:-1px;line-height:1.1;background:linear-gradient(135deg,var(--text) 0%,var(--muted) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.header-subtitle{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:8px;}
+.model-chips{display:flex;gap:10px;margin-top:20px;flex-wrap:wrap;}
+.model-chip{display:flex;align-items:center;gap:8px;padding:6px 14px;border-radius:4px;border:1px solid var(--border2);background:var(--surface);font-family:var(--mono);font-size:11px;color:var(--text);}
+.model-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+
+/* NAV */
+.nav{display:flex;border-bottom:1px solid var(--border);padding:0 52px;overflow-x:auto;scrollbar-width:none;}
+.nav::-webkit-scrollbar{display:none;}
+.nav-btn{font-family:var(--mono);font-size:11px;letter-spacing:2px;text-transform:uppercase;padding:14px 20px;cursor:pointer;border:none;border-bottom:2px solid transparent;background:none;color:var(--muted);white-space:nowrap;transition:all .15s;}
+.nav-btn:hover{color:var(--text);}
+.nav-btn.active{color:var(--text);border-bottom-color:var(--text);}
+
+/* MAIN */
+.main{padding:44px 52px;max-width:1400px;}
+.tab{display:none;}.tab.active{display:block;}
+
+/* SECTION LABEL */
+.slabel{font-family:var(--mono);font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--muted);margin-bottom:20px;display:flex;align-items:center;gap:12px;}
+.slabel::after{content:'';flex:1;height:1px;background:var(--border);}
+
+/* SCORECARD */
+.scorecard-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;margin-bottom:32px;}
+.scard{background:var(--surface);border:1px solid var(--border);border-top:2px solid var(--c,var(--muted2));border-radius:6px;padding:18px;transition:transform .2s;}
+.scard:hover{transform:translateY(-2px);}
+.scard-label{font-family:var(--mono);font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;}
+.scard-val{font-size:28px;font-weight:800;line-height:1;color:var(--c,var(--text));}
+.scard-sub{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:4px;}
+
+/* TABLE */
+.cmp-table{width:100%;border-collapse:collapse;margin-bottom:32px;font-family:var(--mono);font-size:12px;}
+.cmp-table th{padding:10px 16px;font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);text-align:left;}
+.cmp-table td{padding:12px 16px;border-bottom:1px solid var(--border);vertical-align:middle;}
+.cmp-table tr:hover td{background:var(--surface2);}
+.cmp-table tr:last-child td{border-bottom:none;}
+.cmp-table .mname{color:var(--text);font-weight:500;}
+
+/* BAR COMPARE */
+.bc-label{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;}
+.bc-bar-row{display:flex;align-items:center;gap:12px;margin-bottom:6px;}
+.bc-name{font-family:var(--mono);font-size:10px;color:var(--muted);width:160px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.bc-track{flex:1;height:20px;background:var(--surface2);border-radius:2px;overflow:hidden;}
+.bc-fill{height:100%;border-radius:2px;display:flex;align-items:center;justify-content:flex-end;padding-right:6px;font-family:var(--mono);font-size:9px;font-weight:700;color:rgba(0,0,0,.7);transition:width 1.2s cubic-bezier(.16,1,.3,1);min-width:2px;}
+.bc-num{font-family:var(--mono);font-size:10px;width:52px;flex-shrink:0;}
+
+/* RADAR */
+.radar-section{display:grid;grid-template-columns:1fr 1fr;gap:32px;align-items:start;margin-bottom:40px;}
+@media(max-width:900px){.radar-section{grid-template-columns:1fr;}}
+.radar-wrap{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:24px;display:flex;flex-direction:column;align-items:center;}
+.radar-title{font-family:var(--mono);font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:16px;align-self:flex-start;}
+.radar-legend{display:flex;flex-direction:column;gap:8px;margin-top:16px;width:100%;}
+.rli{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:11px;}
+.rli-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+.rli-label{color:var(--muted);flex:1;}
+.rli-val{font-weight:700;}
+
+.insights{display:flex;flex-direction:column;gap:14px;}
+.insight{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--c,var(--muted2));border-radius:0 6px 6px 0;padding:14px 18px;}
+.insight-tag{font-family:var(--mono);font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--c,var(--muted));margin-bottom:6px;}
+.insight-text{font-size:13px;color:var(--text);line-height:1.5;}
+
+/* TEST CASES */
+.test-filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;}
+.fbtn{font-family:var(--mono);font-size:10px;padding:5px 12px;border-radius:3px;border:1px solid var(--border2);background:var(--surface);color:var(--muted);cursor:pointer;letter-spacing:1px;text-transform:uppercase;transition:all .15s;}
+.fbtn:hover{color:var(--text);border-color:var(--text);}
+.fbtn.active{background:var(--text);color:var(--bg);border-color:var(--text);}
+
+.tlist{display:flex;flex-direction:column;gap:6px;}
+.tcard{background:var(--surface);border:1px solid var(--border);border-radius:5px;overflow:hidden;transition:border-color .15s;}
+.tcard:hover,.tcard.open{border-color:var(--border2);}
+.tcard-head{display:flex;align-items:center;gap:14px;padding:12px 16px;cursor:pointer;user-select:none;}
+.tcard-id{font-family:var(--mono);font-size:11px;color:var(--text);min-width:220px;flex-shrink:0;}
+.tcard-tags{display:flex;gap:5px;}
+.tcard-scores{display:flex;gap:14px;margin-left:auto;align-items:center;}
+.tcard-ms{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:12px;font-weight:700;}
+.tcard-body{display:none;padding:16px;border-top:1px solid var(--border);background:var(--bg2);}
+.tcard.open .tcard-body{display:block;}
+.model-responses{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;}
+.mrc{background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:14px;}
+.mrc-head{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+.mrc-dot{width:8px;height:8px;border-radius:50%;}
+.mrc-name{font-family:var(--mono);font-size:10px;color:var(--muted);}
+.mrc-score{font-family:var(--mono);font-size:14px;font-weight:700;margin-left:auto;}
+.mmgrid{display:grid;grid-template-columns:1fr 1fr;gap:1px 8px;font-family:var(--mono);font-size:10px;}
+.mmrow{display:flex;justify-content:space-between;padding:2px 0;color:var(--muted);border-bottom:1px solid var(--border);}
+.mmval{color:var(--text);}
+.resp-box{background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:8px 10px;font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:10px;line-height:1.5;max-height:72px;overflow:hidden;}
+
+/* PILL */
+.pill{display:inline-block;padding:2px 7px;border-radius:2px;font-size:9px;font-family:var(--mono);letter-spacing:1px;font-weight:700;text-transform:uppercase;white-space:nowrap;}
+
+/* GUARDRAIL */
+.gg{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;margin-bottom:32px;}
+.gc{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:18px;}
+.gc-title{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--text);margin-bottom:4px;letter-spacing:1px;}
+.gc-desc{font-size:12px;color:var(--muted);margin-bottom:14px;}
+.g-model-row{display:flex;align-items:center;gap:10px;margin-bottom:6px;}
+.g-mname{font-family:var(--mono);font-size:10px;color:var(--muted);width:130px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.g-gauge{flex:1;height:5px;background:var(--surface2);border-radius:2px;overflow:hidden;}
+.g-fill{height:100%;border-radius:2px;transition:width 1s cubic-bezier(.16,1,.3,1);}
+.g-val{font-family:var(--mono);font-size:11px;font-weight:700;width:36px;text-align:right;}
+
+/* CONTEXT */
+.ctx-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:32px;}
+.ctx-card{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:18px;text-align:center;}
+.ctx-tokens{font-family:var(--mono);font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;}
+.ctx-score{font-family:var(--mono);font-size:32px;font-weight:700;line-height:1;}
+.ctx-sub{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:6px;}
+.ctx-mbd{margin-top:10px;display:flex;flex-direction:column;gap:4px;}
+.ctx-mbrow{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;}
+.ctx-mbdot{width:6px;height:6px;border-radius:50%;}
+.ctx-mbname{color:var(--muted);flex:1;font-size:9px;}
+
+/* COST */
+.cost-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-bottom:32px;}
+.cost-card{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:18px;}
+.cost-mh{display:flex;align-items:center;gap:8px;margin-bottom:14px;}
+.cost-mn{font-family:var(--mono);font-size:10px;color:var(--muted);}
+.cost-row{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;padding:5px 0;border-bottom:1px solid var(--border);}
+.cost-row:last-child{border-bottom:none;}
+.cr-label{color:var(--muted);}
+.cr-val{color:var(--text);font-weight:700;}
+
+/* ANIM */
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.fi{animation:fadeUp .35s ease both;}
+
+@media(max-width:768px){
+  .header,.nav,.main{padding-left:20px;padding-right:20px;}
+  .scorecard-grid{grid-template-columns:repeat(2,1fr);}
+}
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="loader-ring"></div>
+  <div class="loader-text">Loading eval_results_full.json…</div>
+</div>
+
+<div id="app" style="display:none">
+  <div class="header">
+    <div class="header-bg"></div>
+    <div class="header-eyebrow">LLM Evaluation Dashboard</div>
+    <h1>News &amp; Changelog Chatbot — Model Report</h1>
+    <div class="header-subtitle" id="hsubtitle"></div>
+    <div class="model-chips" id="model-chips"></div>
+  </div>
+
+  <nav class="nav">
+    <button class="nav-btn active" data-tab="overview">Overview</button>
+    <button class="nav-btn" data-tab="radar">Radar</button>
+    <button class="nav-btn" data-tab="metrics">Metrics</button>
+    <button class="nav-btn" data-tab="tests">Test Cases</button>
+    <button class="nav-btn" data-tab="guardrails">Guardrails</button>
+    <button class="nav-btn" data-tab="context">Context Ladder</button>
+    <button class="nav-btn" data-tab="cost">Cost &amp; Latency</button>
+  </nav>
+
+  <div class="main">
+    <div id="tab-overview"    class="tab active"></div>
+    <div id="tab-radar"       class="tab"></div>
+    <div id="tab-metrics"     class="tab"></div>
+    <div id="tab-tests"       class="tab"></div>
+    <div id="tab-guardrails"  class="tab"></div>
+    <div id="tab-context"     class="tab"></div>
+    <div id="tab-cost"        class="tab"></div>
+  </div>
+</div>
+
+<script>
+/* ── palette ── */
+const PAL = [
+  {hex:'#6366f1',bg:'rgba(99,102,241,.15)',  br:'rgba(99,102,241,.4)'},
+  {hex:'#22c55e',bg:'rgba(34,197,94,.15)',   br:'rgba(34,197,94,.4)'},
+  {hex:'#f59e0b',bg:'rgba(245,158,11,.15)',  br:'rgba(245,158,11,.4)'},
+  {hex:'#ec4899',bg:'rgba(236,72,153,.15)',  br:'rgba(236,72,153,.4)'},
+  {hex:'#06b6d4',bg:'rgba(6,182,212,.15)',   br:'rgba(6,182,212,.4)'},
+];
+
+const sclr = v => v>=.85?'#22c55e':v>=.70?'#f59e0b':v>=.50?'#f97316':'#ef4444';
+const pct  = (v,d=1) => ((v||0)*100).toFixed(d)+'%';
+const fnum = (v,d=2) => (v||0).toFixed(d);
+
+/* ────────────────────────────────────────────────────────────────────────────
+   DATA NORMALISATION
+   Supports two JSON shapes:
+   (A) {model_id: {...aggregates, detailed_results:[...]}}   ← multi-model
+   (B) [{...aggregates, detailed_results:[...]}]            ← array of models
+   (C) Single flat object {aggregates, detailed_results}    ← one model
+   
+   Each model record may have detailed_results as an array of run objects.
+   Each run object must have at minimum:
+     id, test_group, complexity, overall (0-1), tool_correctness_score,
+     faithfulness_score, relevancy_score, hallucination_score,
+     safety_score, completeness_score, conciseness_score, tone_score,
+     latency, cost_usd, response, expected_tools, tools_called
+────────────────────────────────────────────────────────────────────────────── */
+function normalise(raw) {
+  let entries = [];
+
+  if (Array.isArray(raw)) {
+    // shape B
+    entries = raw.map((r,i) => ({key: r.model_id||r.label||`model_${i}`, ...r}));
+  } else if (raw.detailed_results || raw.label || raw.avg_overall !== undefined) {
+    // shape C — single flat object
+    entries = [{key: raw.model_id||raw.label||'model_0', ...raw}];
+  } else {
+    // shape A — object keyed by model id
+    entries = Object.entries(raw).map(([k,v]) => ({key:k, ...v}));
+  }
+
+  return entries.map((e,i) => {
+    const runs = e.detailed_results || [];
+    const model = {
+      key:   e.key,
+      label: e.label || e.model_id || e.model_name || e.key,
+      color: PAL[i % PAL.length],
+      runs,
+      agg:   computeAgg(e, runs),
+    };
+    return model;
+  });
+}
+
+function avg(arr, k) {
+  const vals = arr.map(r => r[k]).filter(v => v != null && !isNaN(v));
+  return vals.length ? vals.reduce((s,v)=>s+v,0)/vals.length : 0;
+}
+
+function computeAgg(e, runs) {
+  /* If the JSON already has aggregate keys, use them.
+     Otherwise compute from detailed_results. */
+  const has = k => e[k] != null;
+
+  const g = (k, fallback) => has(k) ? e[k] : fallback;
+
+  const overall      = g('avg_overall',           avg(runs,'overall'));
+  const tool         = g('avg_tool_correctness',  avg(runs,'tool_correctness_score'));
+  const faith        = g('avg_faithfulness',       avg(runs,'faithfulness_score'));
+  const relevancy    = g('avg_relevancy',          avg(runs,'relevancy_score'));
+  const hallucRate   = g('hallucination_rate',     runs.length ? runs.filter(r=>r.is_hallucinated||r.hallucination_score>=.5).length/runs.length : 0);
+  const safety       = g('avg_safety',             avg(runs,'safety_score'));
+  const completeness = g('avg_completeness',       avg(runs,'completeness_score'));
+  const conciseness  = g('avg_conciseness',        avg(runs,'conciseness_score'));
+  const tone         = g('avg_tone',               avg(runs,'tone_score'));
+  const latency      = g('avg_latency',            avg(runs,'latency'));
+  const p95          = g('p95_latency',            percentile(runs.map(r=>r.latency||0),.95));
+  const totalCost    = g('total_cost_usd',         runs.reduce((s,r)=>s+(r.cost_usd||0),0));
+  const costPerTest  = g('avg_cost_per_test',      runs.length ? totalCost/runs.length : 0);
+  const cqp          = g('cost_per_quality_pt',    overall>0 ? costPerTest/overall : 0);
+  const nRuns        = e.n_runs || e.num_runs || (new Set(runs.map(r=>r.run_id||0)).size) || runs.length;
+  const uTests       = e.unique_tests || (new Set(runs.map(r=>r.id)).size);
+
+  /* Breakdown helpers */
+  const byGroup   = groupBy(runs, r=>r.test_group||'standard');
+  const byCx      = groupBy(runs, r=>r.complexity||'medium');
+
+  const groupAgg  = Object.fromEntries(Object.entries(byGroup).map(([g,rs])=>[g,{avg_overall:avg(rs,'overall')}]));
+  const cxAgg     = Object.fromEntries(Object.entries(byCx).map(([c,rs])=>[c,{avg_overall:avg(rs,'overall'),avg_latency:avg(rs,'latency'),avg_tool:avg(rs,'tool_correctness_score')}]));
+
+  return {
+    avg_overall:overall, avg_tool_correctness:tool, avg_faithfulness:faith,
+    avg_relevancy:relevancy, hallucination_rate:hallucRate,
+    avg_safety:safety, avg_completeness:completeness,
+    avg_conciseness:conciseness, avg_tone:tone,
+    avg_latency:latency, p95_latency:p95,
+    total_cost_usd:totalCost, avg_cost_per_test:costPerTest, cost_per_quality_pt:cqp,
+    n_runs:nRuns, unique_tests:uTests,
+    std_overall: e.std_overall||0,
+    by_group:  e.by_group  || groupAgg,
+    by_complexity: e.by_complexity || cxAgg,
+  };
+}
+
+function percentile(arr, p) {
+  if (!arr.length) return 0;
+  const s = [...arr].sort((a,b)=>a-b);
+  const i = Math.floor(s.length * p);
+  return s[Math.min(i, s.length-1)];
+}
+
+function groupBy(arr, fn) {
+  return arr.reduce((o,r)=>{const k=fn(r);(o[k]=o[k]||[]).push(r);return o;},{});
+}
+
+/* ── MAIN ── */
+async function init() {
+  let raw;
+  try {
+    const res = await fetch('/eval_results_full.json');
+    if (!res.ok) throw new Error(`HTTP ${res.status} — ${res.statusText}`);
+    raw = await res.json();
+  } catch(e) {
+    document.getElementById('loading').innerHTML = `
+      <div style="text-align:center;font-family:var(--mono);color:#ef4444;font-size:13px;line-height:2">
+        <div style="font-size:28px;margin-bottom:12px">⚠</div>
+        <strong>Could not load eval_results_full.json</strong><br>
+        <span style="color:var(--muted)">Place the file alongside this HTML and open via a local server.</span><br>
+        <span style="color:var(--muted2);font-size:11px">${e.message}</span>
+      </div>`;
+    return;
+  }
+
+  const models = normalise(raw);
+
+  // Header
+  const a = models[0].agg;
+  document.getElementById('hsubtitle').textContent =
+    `${a.n_runs || '?'} runs × ${a.unique_tests || '?'} tests · ${models.length} model${models.length>1?'s':''} compared`;
+
+  const chipsEl = document.getElementById('model-chips');
+  models.forEach(m => {
+    chipsEl.innerHTML += `<div class="model-chip"><div class="model-dot" style="background:${m.color.hex}"></div>${m.label}</div>`;
+  });
+
+  // Nav tabs
+  document.querySelectorAll('.nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+      document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
+    });
+  });
+
+  buildOverview(models);
+  buildRadar(models);
+  buildMetrics(models);
+  buildTests(models);
+  buildGuardrails(models);
+  buildContext(models);
+  buildCost(models);
+
+  document.getElementById('loading').style.display='none';
+  document.getElementById('app').style.display='block';
+}
+
+/* ═══════════════════════════════ OVERVIEW ═══════════════════════════════ */
+function buildOverview(models) {
+  const el = document.getElementById('tab-overview');
+  const METRICS = [
+    {k:'avg_overall',         lbl:'Overall Score',       fmt:pct,                invert:false, sub:m=>`σ ±${pct(m.std_overall||0)}`},
+    {k:'avg_tool_correctness',lbl:'Tool Correctness',    fmt:pct,                invert:false, sub:()=>'avg'},
+    {k:'avg_faithfulness',    lbl:'Faithfulness',        fmt:pct,                invert:false, sub:()=>'avg'},
+    {k:'avg_relevancy',       lbl:'Relevancy',           fmt:pct,                invert:false, sub:()=>'avg'},
+    {k:'hallucination_rate',  lbl:'Hallucination Rate',  fmt:pct,                invert:true,  sub:()=>'of runs'},
+    {k:'avg_safety',          lbl:'Safety',              fmt:pct,                invert:false, sub:()=>'avg'},
+    {k:'avg_completeness',    lbl:'Completeness',        fmt:pct,                invert:false, sub:()=>'avg'},
+    {k:'avg_latency',         lbl:'Avg Latency',         fmt:v=>fnum(v,2)+'s',  invert:true,  sub:m=>`P95: ${fnum(m.p95_latency,2)}s`},
+  ];
+
+  let html = '';
+  models.forEach((m,mi) => {
+    if (mi>0) html += `<div style="height:16px"></div>`;
+    html += `<div class="slabel">${m.label}</div><div class="scorecard-grid">`;
+    METRICS.forEach(mt => {
+      const v = m.agg[mt.k]||0;
+      const c = mt.invert ? sclr(1-v) : sclr(v);
+      html += `<div class="scard fi" style="--c:${c}">
+        <div class="scard-label">${mt.lbl}</div>
+        <div class="scard-val">${mt.fmt(v)}</div>
+        <div class="scard-sub">${typeof mt.sub==='function'?mt.sub(m.agg):mt.sub}</div>
+      </div>`;
+    });
+    html += `</div>`;
+  });
+
+  // Complexity bar comparison
+  if (models.length>1) {
+    html += `<div class="slabel" style="margin-top:8px">Score by Complexity</div>`;
+    ['low','medium','high'].forEach(cx => {
+      html += `<div style="margin-bottom:18px"><div class="bc-label">${cx.toUpperCase()}</div>`;
+      models.forEach(m => {
+        const v = m.agg.by_complexity?.[cx]?.avg_overall||0;
+        html += barRow(m.label, v, m.color.hex, pct(v));
+      });
+      html += `</div>`;
+    });
+
+    html += `<div class="slabel" style="margin-top:8px">Score by Group</div>`;
+    ['standard','guardrail','context_ladder'].forEach(g => {
+      html += `<div style="margin-bottom:18px"><div class="bc-label">${g.replace('_',' ').toUpperCase()}</div>`;
+      models.forEach(m => {
+        const v = m.agg.by_group?.[g]?.avg_overall||0;
+        html += barRow(m.label, v, m.color.hex, pct(v));
+      });
+      html += `</div>`;
+    });
+  }
+
+  el.innerHTML = html;
+}
+
+function barRow(name, v, color, label) {
+  return `<div class="bc-bar-row">
+    <div class="bc-name">${name}</div>
+    <div class="bc-track"><div class="bc-fill" style="width:${v*100}%;background:${color}">${label}</div></div>
+    <div class="bc-num" style="color:${color}">${label}</div>
+  </div>`;
+}
+
+/* ═══════════════════════════════ RADAR ═══════════════════════════════════ */
+const RADAR_AXES = [
+  {k:'avg_tool_correctness',lbl:'Tool Correctness'},
+  {k:'avg_faithfulness',    lbl:'Faithfulness'},
+  {k:'avg_relevancy',       lbl:'Relevancy'},
+  {k:'avg_safety',          lbl:'Safety'},
+  {k:'avg_completeness',    lbl:'Completeness'},
+  {k:'avg_conciseness',     lbl:'Conciseness'},
+  {k:'avg_tone',            lbl:'Tone'},
+  {k:'avg_overall',         lbl:'Overall'},
+];
+
+function buildRadar(models) {
+  const el = document.getElementById('tab-radar');
+
+  const legendHtml = models.map(m => {
+    const vals = RADAR_AXES.map(a=>m.agg[a.k]||0);
+    const mean = vals.reduce((s,v)=>s+v,0)/vals.length;
+    return `<div class="rli">
+      <div class="rli-dot" style="background:${m.color.hex}"></div>
+      <div class="rli-label">${m.label}</div>
+      <div class="rli-val" style="color:${m.color.hex}">${pct(mean)}</div>
+    </div>`;
+  }).join('');
+
+  // Insights: for multi-model show biggest deltas; for single show top/bottom
+  let insightsHtml = '';
+  if (models.length >= 2) {
+    const m0 = models[0], m1 = models[1];
+    const diffs = RADAR_AXES.map(a => ({
+      axis:a, v0:m0.agg[a.k]||0, v1:m1.agg[a.k]||0,
+      delta: (m0.agg[a.k]||0)-(m1.agg[a.k]||0)
+    })).filter(d=>Math.abs(d.delta)>.04)
+      .sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta));
+
+    if (!diffs.length) {
+      insightsHtml = `<div class="insight fi" style="--c:#22c55e">
+        <div class="insight-tag">Models very close</div>
+        <div class="insight-text">No metric differs by more than 4% — performance is essentially equivalent across all dimensions.</div>
+      </div>`;
+    } else {
+      diffs.slice(0,6).forEach(d => {
+        const winner = d.delta>0?m0:m1, loser = d.delta>0?m1:m0;
+        insightsHtml += `<div class="insight fi" style="--c:${winner.color.hex}">
+          <div class="insight-tag">${d.axis.lbl}</div>
+          <div class="insight-text">
+            <strong style="color:${winner.color.hex}">${winner.label}</strong>
+            leads by <strong>${pct(Math.abs(d.delta))}</strong>
+            (${pct(Math.max(d.v0,d.v1))} vs ${pct(Math.min(d.v0,d.v1))})
+          </div>
+        </div>`;
+      });
+    }
+  } else {
+    const m = models[0];
+    const sorted = [...RADAR_AXES].sort((a,b)=>(m.agg[b.k]||0)-(m.agg[a.k]||0));
+    sorted.slice(0,3).forEach(a => {
+      insightsHtml += `<div class="insight fi" style="--c:#22c55e"><div class="insight-tag">✓ Strong</div><div class="insight-text"><strong>${a.lbl}</strong>: ${pct(m.agg[a.k]||0)}</div></div>`;
+    });
+    sorted.slice(-3).reverse().forEach(a => {
+      insightsHtml += `<div class="insight fi" style="--c:#ef4444"><div class="insight-tag">⚠ Weak</div><div class="insight-text"><strong>${a.lbl}</strong>: ${pct(m.agg[a.k]||0)}</div></div>`;
+    });
+  }
+
+  el.innerHTML = `
+    <div class="slabel">Radar Comparison</div>
+    <div class="radar-section">
+      <div class="radar-wrap">
+        <div class="radar-title">metric radar</div>
+        <canvas id="radarCanvas" width="360" height="360"></canvas>
+        <div class="radar-legend">${legendHtml}</div>
+      </div>
+      <div class="insights">${insightsHtml}</div>
+    </div>`;
+
+  drawRadar('radarCanvas', models);
+}
+
+function drawRadar(id, models) {
+  const canvas = document.getElementById(id);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W=canvas.width, H=canvas.height, cx=W/2, cy=H/2;
+  const R = Math.min(W,H)/2 - 50;
+  const N = RADAR_AXES.length;
+  const ang = i => (i/N)*Math.PI*2 - Math.PI/2;
+
+  ctx.clearRect(0,0,W,H);
+
+  // rings
+  [.25,.5,.75,1].forEach(r => {
+    ctx.beginPath();
+    for (let i=0;i<N;i++) {
+      const a=ang(i), x=cx+Math.cos(a)*R*r, y=cy+Math.sin(a)*R*r;
+      i?ctx.lineTo(x,y):ctx.moveTo(x,y);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = r===1?'rgba(255,255,255,.08)':'rgba(255,255,255,.04)';
+    ctx.lineWidth=1; ctx.stroke();
+    if (r<1) {
+      ctx.fillStyle='rgba(255,255,255,.2)';
+      ctx.font='9px JetBrains Mono,monospace';
+      ctx.textAlign='left';
+      ctx.fillText((r*100).toFixed(0)+'%', cx+4, cy-R*r+3);
+    }
+  });
+
+  // spokes
+  for (let i=0;i<N;i++) {
+    const a=ang(i);
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx+Math.cos(a)*R, cy+Math.sin(a)*R);
+    ctx.strokeStyle='rgba(255,255,255,.06)'; ctx.lineWidth=1; ctx.stroke();
+  }
+
+  // labels
+  ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.font='10px JetBrains Mono,monospace';
+  for (let i=0;i<N;i++) {
+    const a=ang(i);
+    ctx.fillStyle='rgba(180,185,210,.7)';
+    ctx.fillText(RADAR_AXES[i].lbl.split(' ')[0], cx+Math.cos(a)*(R+26), cy+Math.sin(a)*(R+26));
+  }
+
+  // polygons
+  models.forEach(m => {
+    const vals = RADAR_AXES.map(a=>m.agg[a.k]||0);
+    ctx.beginPath();
+    vals.forEach((v,i)=>{
+      const a=ang(i), x=cx+Math.cos(a)*R*v, y=cy+Math.sin(a)*R*v;
+      i?ctx.lineTo(x,y):ctx.moveTo(x,y);
+    });
+    ctx.closePath();
+    ctx.fillStyle = m.color.hex+'2e'; ctx.fill();
+    ctx.strokeStyle=m.color.hex; ctx.lineWidth=2; ctx.stroke();
+    vals.forEach((v,i)=>{
+      const a=ang(i), x=cx+Math.cos(a)*R*v, y=cy+Math.sin(a)*R*v;
+      ctx.beginPath(); ctx.arc(x,y,3.5,0,Math.PI*2);
+      ctx.fillStyle=m.color.hex; ctx.fill();
+    });
+  });
+}
+
+/* ═══════════════════════════════ METRICS ════════════════════════════════ */
+function buildMetrics(models) {
+  const el = document.getElementById('tab-metrics');
+
+  const ROWS = [
+    {k:'avg_overall',         sk:'std_overall',      lbl:'Overall',          invert:false},
+    {k:'avg_tool_correctness',sk:null,               lbl:'Tool Correctness', invert:false},
+    {k:'avg_faithfulness',    sk:null,               lbl:'Faithfulness',     invert:false},
+    {k:'hallucination_rate',  sk:null,               lbl:'Hallucination Rate',invert:true},
+    {k:'avg_relevancy',       sk:null,               lbl:'Relevancy',        invert:false},
+    {k:'avg_safety',          sk:null,               lbl:'Safety',           invert:false},
+    {k:'avg_completeness',    sk:null,               lbl:'Completeness',     invert:false},
+    {k:'avg_conciseness',     sk:null,               lbl:'Conciseness',      invert:false},
+    {k:'avg_tone',            sk:null,               lbl:'Tone',             invert:false},
+    {k:'avg_latency',         sk:null,               lbl:'Avg Latency (s)',  invert:true, raw:true},
+    {k:'p95_latency',         sk:null,               lbl:'P95 Latency (s)',  invert:true, raw:true},
+    {k:'avg_cost_per_test',   sk:null,               lbl:'Cost / Test ($)',  invert:true, dollar:true},
+    {k:'cost_per_quality_pt', sk:null,               lbl:'Cost / Qual Pt',   invert:true, dollar:true},
+  ];
+
+  const thCols = models.map(m =>
+    `<th><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:${m.color.hex};display:inline-block"></span>${m.label}</span></th>`
+  ).join('');
+
+  let tbody='';
+  ROWS.forEach(r => {
+    const vals = models.map(m=>m.agg[r.k]||0);
+    const best = r.invert ? Math.min(...vals) : Math.max(...vals);
+    const tds = models.map((m,mi) => {
+      const v = m.agg[r.k]||0;
+      const std = r.sk ? m.agg[r.sk] : null;
+      const isBest = models.length>1 && Math.abs(v-best)<1e-9;
+      let disp = r.dollar ? `$${v.toFixed(6)}` : r.raw ? v.toFixed(3) : pct(v);
+      if (std!=null) disp += ` <span style="color:var(--muted)">±${r.raw?std.toFixed(3):pct(std)}</span>`;
+      const c = r.invert?sclr(1-v):sclr(v);
+      return `<td><span style="color:${c};font-family:var(--mono);font-weight:${isBest?700:400}">${disp}</span>${isBest&&models.length>1?'<span style="font-size:9px;margin-left:4px;color:var(--muted)">◀</span>':''}</td>`;
+    }).join('');
+    tbody += `<tr><td class="mname">${r.lbl}</td>${tds}</tr>`;
+  });
+
+  let cxHtml = `<div class="slabel" style="margin-top:8px">By Complexity</div>
+    <table class="cmp-table"><thead><tr><th>Complexity / Metric</th>${thCols}</tr></thead><tbody>`;
+  ['low','medium','high'].forEach(cx => {
+    cxHtml += `<tr><td colspan="${models.length+1}" style="background:var(--surface2);font-family:var(--mono);font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--muted)">${cx}</td></tr>`;
+    [['avg_overall','Overall'],['avg_tool','Tool Corr'],['avg_latency','Latency (s)']].forEach(([k,l])=>{
+      const cvals = models.map(m=>m.agg.by_complexity?.[cx]?.[k]||0);
+      const cbest = Math.max(...cvals);
+      const ctds = models.map((m)=>{
+        const v = m.agg.by_complexity?.[cx]?.[k]||0;
+        const ib = models.length>1 && Math.abs(v-cbest)<1e-9;
+        const c = sclr(v);
+        const d = k==='avg_latency'?v.toFixed(2)+'s':pct(v);
+        return `<td><span style="color:${c};font-family:var(--mono);font-weight:${ib?700:400}">${d}</span></td>`;
+      }).join('');
+      cxHtml += `<tr><td class="mname" style="padding-left:28px">${l}</td>${ctds}</tr>`;
+    });
+  });
+  cxHtml += `</tbody></table>`;
+
+  el.innerHTML = `<div class="slabel">deepeval Metric Comparison</div>
+    <table class="cmp-table"><thead><tr><th>Metric</th>${thCols}</tr></thead><tbody>${tbody}</tbody></table>
+    ${cxHtml}`;
+}
+
+/* ═══════════════════════════════ TEST CASES ═════════════════════════════ */
+function buildTests(models) {
+  const el = document.getElementById('tab-tests');
+
+  // Build per-test aggregates across models
+  const testMap = {};
+  models.forEach(m => {
+    m.runs.forEach(r => {
+      if (!testMap[r.id]) testMap[r.id] = {id:r.id, desc:r.description||'', group:r.test_group||'standard', complexity:r.complexity||'medium', models:{}};
+      if (!testMap[r.id].models[m.key]) testMap[r.id].models[m.key]=[];
+      testMap[r.id].models[m.key].push(r);
+    });
+  });
+
+  const tests = Object.values(testMap).map(t => {
+    const mstats = {};
+    models.forEach(m => {
+      const runs = t.models[m.key]||[];
+      if (!runs.length) return;
+      const a = k => avg(runs,k);
+      mstats[m.key] = {
+        overall:     a('overall'),
+        tool:        a('tool_correctness_score'),
+        faith:       a('faithfulness_score'),
+        rel:         a('relevancy_score'),
+        safety:      a('safety_score'),
+        complete:    a('completeness_score'),
+        concise:     a('conciseness_score'),
+        tone:        a('tone_score'),
+        hallRate:    runs.filter(r=>r.is_hallucinated||r.hallucination_score>=.5).length/runs.length,
+        latency:     a('latency'),
+        resp:        runs[0]?.response||'',
+        tools:       runs[0]?.tools_called||[],
+        n:           runs.length,
+      };
+    });
+    return {...t, mstats};
+  });
+
+  const groups = [...new Set(tests.map(t=>t.group))];
+  const cxs    = [...new Set(tests.map(t=>t.complexity))];
+
+  let fhtml = `<div class="test-filters">
+    <button class="fbtn active" data-f="all">All (${tests.length})</button>`;
+  groups.forEach(g => fhtml += `<button class="fbtn" data-f="g:${g}">${g.replace('_',' ')}</button>`);
+  cxs.forEach(c   => fhtml += `<button class="fbtn" data-f="cx:${c}">${c}</button>`);
+  fhtml += `</div><div id="tlist"></div>`;
+
+  el.innerHTML = fhtml;
+
+  function render(f) {
+    const filt = f==='all' ? tests :
+      f.startsWith('g:')  ? tests.filter(t=>t.group===f.slice(2)) :
+      tests.filter(t=>t.complexity===f.slice(3));
+
+    const gc = t => t.group==='guardrail'?'#ef4444':t.group==='context_ladder'?'#06b6d4':'#22c55e';
+    const cc = t => ({low:'#6366f1',medium:'#f59e0b',high:'#ef4444'}[t.complexity]||'#888');
+
+    document.getElementById('tlist').innerHTML = `<div class="tlist">${
+      filt.map(t => {
+        const scoresHtml = models.map(m => {
+          const s = t.mstats[m.key];
+          if (!s) return '';
+          return `<div class="tcard-ms"><div style="width:6px;height:6px;border-radius:50%;background:${m.color.hex}"></div><span style="color:${sclr(s.overall)}">${pct(s.overall,0)}</span></div>`;
+        }).join('');
+
+        const bodyHtml = `<div class="model-responses">${
+          models.map(m => {
+            const s = t.mstats[m.key];
+            if (!s) return '';
+            const toolsHtml = s.tools.length
+              ? [...new Set(s.tools)].map(x=>`<span class="pill" style="background:rgba(6,182,212,.12);color:#06b6d4;border:1px solid rgba(6,182,212,.25)">${x}</span>`).join(' ')
+              : `<span style="font-family:var(--mono);font-size:10px;color:var(--muted)">none</span>`;
+            return `<div class="mrc">
+              <div class="mrc-head">
+                <div class="mrc-dot" style="background:${m.color.hex}"></div>
+                <div class="mrc-name">${m.label}</div>
+                <div class="mrc-score" style="color:${sclr(s.overall)}">${pct(s.overall,0)}</div>
+              </div>
+              <div class="mmgrid">
+                <div class="mmrow">Tool<span class="mmval" style="color:${sclr(s.tool)}">${pct(s.tool,0)}</span></div>
+                <div class="mmrow">Faith<span class="mmval" style="color:${sclr(s.faith)}">${pct(s.faith,0)}</span></div>
+                <div class="mmrow">Relevancy<span class="mmval" style="color:${sclr(s.rel)}">${pct(s.rel,0)}</span></div>
+                <div class="mmrow">Safety<span class="mmval" style="color:${sclr(s.safety)}">${pct(s.safety,0)}</span></div>
+                <div class="mmrow">Complete<span class="mmval" style="color:${sclr(s.complete)}">${pct(s.complete,0)}</span></div>
+                <div class="mmrow">Halluc<span class="mmval" style="color:${sclr(1-s.hallRate)}">${pct(s.hallRate,0)}</span></div>
+                <div class="mmrow">Latency<span class="mmval">${s.latency.toFixed(2)}s</span></div>
+                <div class="mmrow">Runs<span class="mmval">${s.n}</span></div>
+              </div>
+              <div style="margin-top:8px;font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">tools</div>
+              <div style="margin-top:4px">${toolsHtml}</div>
+              <div class="resp-box">${(s.resp||'').slice(0,200)}</div>
+            </div>`;
+          }).join('')
+        }</div>`;
+
+        return `<div class="tcard fi">
+          <div class="tcard-head" onclick="this.closest('.tcard').classList.toggle('open')">
+            <div class="tcard-id">${t.id}</div>
+            <div class="tcard-tags">
+              <span class="pill" style="background:${gc(t)}18;color:${gc(t)};border:1px solid ${gc(t)}40">${t.group.replace('_',' ')}</span>
+              <span class="pill" style="background:${cc(t)}18;color:${cc(t)};border:1px solid ${cc(t)}40">${t.complexity}</span>
+            </div>
+            <div class="tcard-scores">${scoresHtml}</div>
+            <span style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-left:8px">▶</span>
+          </div>
+          <div class="tcard-body">${bodyHtml}</div>
+        </div>`;
+      }).join('')
+    }</div>`;
+  }
+
+  render('all');
+  el.addEventListener('click', e => {
+    const b = e.target.closest('.fbtn'); if (!b) return;
+    el.querySelectorAll('.fbtn').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    render(b.dataset.f);
+  });
+}
+
+/* ═══════════════════════════════ GUARDRAILS ═════════════════════════════ */
+function buildGuardrails(models) {
+  const el = document.getElementById('tab-guardrails');
+
+  const gMap = {};
+  models.forEach(m => {
+    m.runs.filter(r=>r.test_group==='guardrail').forEach(r => {
+      if (!gMap[r.id]) gMap[r.id]={id:r.id,desc:r.description||'',models:{}};
+      (gMap[r.id].models[m.key]=gMap[r.id].models[m.key]||[]).push(r);
+    });
+  });
+
+  let html = `<div class="slabel">Guardrail Test Results</div><div class="gg">`;
+  Object.values(gMap).forEach(t => {
+    html += `<div class="gc fi">
+      <div class="gc-title">${t.id.replace(/_/g,' ').toUpperCase()}</div>
+      <div class="gc-desc">${t.desc}</div>`;
+
+    [{k:'safety_score',lbl:'Safety'},{k:'overall',lbl:'Overall'},{k:'tool_correctness_score',lbl:'Tool Corr'}].forEach(mk => {
+      html += `<div style="margin-bottom:10px">
+        <div style="font-family:var(--mono);font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:5px">${mk.lbl}</div>`;
+      models.forEach(m => {
+        const runs = t.models[m.key]||[];
+        if (!runs.length) return;
+        const v = avg(runs, mk.k);
+        const c = sclr(v);
+        html += `<div class="g-model-row">
+          <div class="g-mname"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${m.color.hex};margin-right:6px"></span>${m.label}</div>
+          <div class="g-gauge"><div class="g-fill" style="width:${v*100}%;background:${c}"></div></div>
+          <div class="g-val" style="color:${c}">${pct(v,0)}</div>
+        </div>`;
+      });
+      html += `</div>`;
+    });
+
+    // Sample
+    const fr = models[0].runs.find(r=>r.id===t.id);
+    if (fr?.response) {
+      html += `<div style="font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Sample (${models[0].label})</div>
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:8px 10px;font-family:var(--mono);font-size:10px;color:var(--muted);line-height:1.4">${fr.response.slice(0,160)}…</div>`;
+    }
+    html += `</div>`;
+  });
+  html += `</div>`;
+
+  // Summary
+  html += `<div class="slabel" style="margin-top:8px">Safety Summary</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-bottom:32px">`;
+  models.forEach(m => {
+    const gr = m.runs.filter(r=>r.test_group==='guardrail');
+    const sa = avg(gr,'safety_score');
+    const passes = gr.filter(r=>(r.safety_score||0)>=.8).length;
+    const c = sclr(sa);
+    html += `<div class="gc fi">
+      <div class="cost-mh"><div class="model-dot" style="background:${m.color.hex}"></div><div class="cost-mn">${m.label}</div></div>
+      <div class="cost-row"><span class="cr-label">Avg Safety</span><span class="cr-val" style="color:${c}">${pct(sa)}</span></div>
+      <div class="cost-row"><span class="cr-label">Safety Passes</span><span class="cr-val">${passes} / ${gr.length}</span></div>
+      <div class="cost-row"><span class="cr-label">Group Overall</span><span class="cr-val">${pct(m.agg.by_group?.guardrail?.avg_overall||0)}</span></div>
+    </div>`;
+  });
+  html += `</div>`;
+
+  el.innerHTML = html;
+}
+
+/* ═══════════════════════════════ CONTEXT LADDER ═════════════════════════ */
+function buildContext(models) {
+  const el = document.getElementById('tab-context');
+
+  const ctxMap = {};
+  models.forEach(m => {
+    m.runs.filter(r=>r.test_group==='context_ladder').forEach(r => {
+      const tok = r.context_tokens||0;
+      if (!ctxMap[tok]) ctxMap[tok]={tokens:tok,models:{}};
+      (ctxMap[tok].models[m.key]=ctxMap[tok].models[m.key]||[]).push(r);
+    });
+  });
+
+  const levels = Object.values(ctxMap).sort((a,b)=>a.tokens-b.tokens);
+  if (!levels.length) { el.innerHTML=`<p style="color:var(--muted);font-family:var(--mono)">No context_ladder tests found.</p>`; return; }
+
+  let html = `<div class="slabel">Context Window Performance</div><div class="ctx-grid">`;
+  levels.forEach(level => {
+    const lbl = level.tokens===0?'Baseline':
+      level.tokens<1000?`~${level.tokens} tok`:`~${(level.tokens/1000).toFixed(0)}k tokens`;
+    let breakdown='', allScores=[];
+    models.forEach(m => {
+      const runs = level.models[m.key]||[];
+      if (!runs.length) return;
+      const s = avg(runs,'overall');
+      const l = avg(runs,'latency');
+      allScores.push(s);
+      breakdown += `<div class="ctx-mbrow">
+        <div class="ctx-mbdot" style="background:${m.color.hex}"></div>
+        <div class="ctx-mbname">${m.label}</div>
+        <div style="font-family:var(--mono);font-size:10px;font-weight:700;color:${sclr(s)}">${pct(s,0)}</div>
+        <div style="font-family:var(--mono);font-size:9px;color:var(--muted);margin-left:6px">${l.toFixed(2)}s</div>
+      </div>`;
+    });
+    const mean = allScores.length ? allScores.reduce((s,v)=>s+v,0)/allScores.length : 0;
+    html += `<div class="ctx-card fi">
+      <div class="ctx-tokens">${lbl}</div>
+      <div class="ctx-score" style="color:${sclr(mean)}">${pct(mean,1)}</div>
+      <div class="ctx-sub">avg across models</div>
+      <div class="ctx-mbd">${breakdown}</div>
+    </div>`;
+  });
+  html += `</div>`;
+
+  html += `<div class="slabel" style="margin-top:8px">Latency vs Context Size</div>`;
+  models.forEach(m => {
+    const lats = levels.map(l=>avg(l.models[m.key]||[],'latency'));
+    const maxLat = Math.max(...lats,1)*1.2;
+    html += `<div style="margin-bottom:20px"><div class="bc-label" style="color:${m.color.hex}">${m.label}</div>`;
+    levels.forEach((level,i) => {
+      const lbl = level.tokens===0?'Baseline':`~${(level.tokens/1000).toFixed(0)}k`;
+      const l = lats[i];
+      html += barRow(lbl, l/maxLat, m.color.hex, l.toFixed(2)+'s');
+    });
+    html += `</div>`;
+  });
+
+  el.innerHTML = html;
+}
+
+/* ═══════════════════════════════ COST ═══════════════════════════════════ */
+function buildCost(models) {
+  const el = document.getElementById('tab-cost');
+
+  let html = `<div class="slabel">Cost Summary</div><div class="cost-grid">`;
+  models.forEach(m => {
+    const a = m.agg;
+    html += `<div class="cost-card fi">
+      <div class="cost-mh"><div class="model-dot" style="background:${m.color.hex}"></div><div class="cost-mn">${m.label}</div></div>
+      <div class="cost-row"><span class="cr-label">Total Cost</span><span class="cr-val" style="color:${m.color.hex}">$${(a.total_cost_usd||0).toFixed(5)}</span></div>
+      <div class="cost-row"><span class="cr-label">Cost / Test</span><span class="cr-val">$${(a.avg_cost_per_test||0).toFixed(6)}</span></div>
+      <div class="cost-row"><span class="cr-label">Cost / Quality Pt</span><span class="cr-val">$${(a.cost_per_quality_pt||0).toFixed(6)}</span></div>
+      <div class="cost-row"><span class="cr-label">Overall Score</span><span class="cr-val" style="color:${sclr(a.avg_overall)}">${pct(a.avg_overall)}</span></div>
+      <div class="cost-row"><span class="cr-label">Total Tokens</span><span class="cr-val">${(m.runs.reduce((s,r)=>s+(r.total_tokens||0),0)||0).toLocaleString()}</span></div>
+    </div>`;
+  });
+  html += `</div>`;
+
+  html += `<div class="slabel" style="margin-top:8px">Latency Comparison</div>`;
+  [['avg_latency','Average'],['p95_latency','P95']].forEach(([k,lbl]) => {
+    const maxLat = Math.max(...models.map(m=>m.agg[k]||0),1)*1.2;
+    html += `<div style="margin-bottom:20px"><div class="bc-label">${lbl} LATENCY</div>`;
+    models.forEach(m => {
+      const v = m.agg[k]||0;
+      html += barRow(m.label, v/maxLat, m.color.hex, v.toFixed(2)+'s');
+    });
+    html += `</div>`;
+  });
+
+  if (models.length>1) {
+    const thCols = models.map(m=>`<th><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:${m.color.hex};display:inline-block"></span>${m.label}</span></th>`).join('');
+    const best_cqp = Math.min(...models.map(m=>m.agg.cost_per_quality_pt||999));
+    const rows = models.map(m => {
+      const isBest = Math.abs((m.agg.cost_per_quality_pt||0)-best_cqp)<1e-9;
+      return `<tr>
+        <td class="mname">${m.label}</td>
+        <td><span style="color:${sclr(m.agg.avg_overall)};font-family:var(--mono);font-weight:700">${pct(m.agg.avg_overall)}</span></td>
+        <td><span style="font-family:var(--mono)">$${(m.agg.avg_cost_per_test||0).toFixed(6)}</span></td>
+        <td><span style="font-family:var(--mono)">$${(m.agg.cost_per_quality_pt||0).toFixed(6)}</span></td>
+        <td>${isBest?`<span class="pill" style="background:rgba(34,197,94,.12);color:#22c55e;border:1px solid rgba(34,197,94,.25)">Best Value</span>`:'—'}</td>
+      </tr>`;
+    }).join('');
+    html += `<div class="slabel" style="margin-top:8px">Cost vs Quality Tradeoff</div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:20px;max-width:720px">
+        <table class="cmp-table" style="margin:0">
+          <thead><tr><th>Model</th><th>Quality</th><th>Cost/Test</th><th>Cost/Qual Pt</th><th>Value</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  }
+
+  el.innerHTML = html;
+}
+
+/* ── run ── */
+init();
+</script>
+</body>
+</html>
