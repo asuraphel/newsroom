@@ -1,9 +1,7 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { streamText, UIMessage, convertToModelMessages, tool, stepCountIs } from 'ai';
 // import { google } from '@ai-sdk/google';
 // import { openai } from '@ai-sdk/openai';
-
-
-
 // import { OpenRouter } from '@openrouter/sdk';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 // import { groq } from '@ai-sdk/groq';
@@ -57,20 +55,6 @@ export async function POST(req: Request) {
     `,
     stopWhen: stepCountIs(2),
     tools: {
-      weather: tool({
-        description: 'Get the weather in a location',
-        inputSchema: z.object({
-          location: z.string().describe('The location to get the weather for'),
-        }),
-        execute: async ({ location }) => {
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-
-          return {
-            location,
-            temperature: 3275928573854,
-          };
-        },
-      }),
 
       changelog: tool({
         description: 'Whats new for a specific framework or technology. IMPORTANT: Do NOT call this tool unless the user explicitly names a technology. If they do not specify one, ask them first.',
@@ -111,7 +95,7 @@ export async function POST(req: Request) {
           const date = new Date();
           if (timeframe === 'day') date.setDate(date.getDate() - 1);
           else if (timeframe === 'week') date.setDate(date.getDate() - 7);
-          else if (timeframe === 'month') date.setDate(date.getDate() - 30);
+          else if (timeframe === 'month') date.setDate(date.getDate() - 28);
           else date.setDate(date.getDate() - 2); // 'latest' on free plan has ~24h delay
 
           const fromDate = date.toISOString().split('T')[0];
