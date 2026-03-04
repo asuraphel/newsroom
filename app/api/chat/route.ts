@@ -24,8 +24,7 @@ export async function POST(req: Request) {
     //model: groq("qwen/qwen3-32b"),
     messages: await convertToModelMessages(messages),
     temperature: 0.2,
-    system: `/no_think
-
+    system: `
       Respond directly and concisely. Do not use step-by-step reasoning or internal monologues.
 
       You are a sophisticated AI assistant with a consistent professional, 
@@ -38,6 +37,7 @@ export async function POST(req: Request) {
       ### NEWS TOOL PROTOCOL
       - **Wait for Input:** Never call 'summarize_article' immediately after a 'news' call. You must stop and wait for the user to explicitly click a TLDR button or ask for a summary.
       - **Strict One-Call Limit:** You are restricted to exactly ONE tool call per user message. No parallel tool calling is permitted.
+      - **Tool Fallback:** If the 'changelog' tool returns an error or no data, you are permitted to immediately call the 'news' tool as a fallback to help the user.
 
       1. Use the 'changelog' tool ONLY for technical software, libraries, frameworks, and programming languages (e.g., "Django", "React", "Python", "Tailwind"). These topics have versioned releases, tags, and code repositories on GitHub.
 
@@ -53,7 +53,7 @@ export async function POST(req: Request) {
       - User: "Recent React changes" -> Call changelog(topic: "React")
       - User: "What's new in Premier League?" -> Call news(query: "Premier League")
     `,
-    stopWhen: stepCountIs(2),
+    stopWhen: stepCountIs(3),
     tools: {
 
       changelog: tool({
