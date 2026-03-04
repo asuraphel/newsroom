@@ -57,7 +57,9 @@ export async function POST(req: Request) {
     tools: {
 
       changelog: tool({
-        description: 'Whats new for a specific framework or technology. IMPORTANT: Do NOT call this tool unless the user explicitly names a technology. If they do not specify one, ask them first.',
+        description: 'Whats new for a specific framework or technology. ' + 
+    'IMPORTANT: This prototype ONLY has data for: React, Django, Next.js, Tailwind. ' +
+    'If the user asks for a technology NOT in this list, do not call this tool. Use the news tool instead.',
         inputSchema: z.object({
           topic: z.string().describe('The name of the technology to search for (e.g. "Django", "React").'),
         }),
